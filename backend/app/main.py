@@ -7,17 +7,11 @@ from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-# ✅ 修正：从新的 routers 包导入
-from app.routers import auth, social, routes
-
-# ✅ 修正：从新的 core.database 导入
+from app.routers import auth, social, routes  # ✅ 引用 routes
 from app.core.database import SessionLocal, fetch_one, fetch_one_returning, engine, Base
 from app.models.sql_models import AuthUser
-
-# ✅ 修正：从新的 services 包导入
 from app.services.planner import AutoPlannerService
 
 logging.basicConfig(level=logging.INFO)
@@ -33,11 +27,10 @@ static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# 挂载路由
+# ✅ 注册所有路由
 app.include_router(auth.router)
 app.include_router(social.router)
-# 注意：你的 routes.py 目前还没被 router 包装，如果需要挂载请在 routes.py 里定义 APIRouter
-# app.include_router(routes.router) 
+app.include_router(routes.router)  # ✅ 现在可以安全地挂载它了
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ... (后面的 WebSocket 代码保持不变，不需要动) ...
+# ...
+# ...
 # ==============================================================
 #                 WebSocket Manager (Group Chat)
 # ==============================================================
