@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  api:
+    image: python:3.11-slim
+    working_dir: /app
+    # ✅ 修复 1：路径改为 app.main:app (因为文件现在在 app/main.py)
+    command: >
+      bash -c "pip install --no-cache-dir -r requirements.txt
+      && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env.example
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OPENAI_API_KEY=ollama
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  postgres:
+    # ✅ 修复 2：必须使用支持地图功能的 postgis 镜像，否则 seed_db 会失败
+    image: postgis/postgis:16-3.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hikebot
+      POSTGRES_USER: hikebot
+      POSTGRES_PASSWORD: hikebot
+    ports:
+      # 对外暴露 5433 (DBeaver连这个)，对内还是 5432
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/migrations:/app/migrations:ro
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  ui:
+    build: ./frontend
+    container_name: dsci560_hikebot-ui-1
+    working_dir: /app
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.fileWatcherType=poll
+    volumes:
+      - ./frontend:/app
+    env_file:
+      - ./frontend/.env.example
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
