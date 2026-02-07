@@ -1,13 +1,10 @@
-# backend/models.py
-
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Text, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from pydantic import BaseModel
 
-# 引入我们在 db.py 里定义的 Base
-from db import Base
+# ✅ 修正：从新的 core.database 导入 Base
+from app.core.database import Base
 
 # ==========================================
 # 1. SQLAlchemy Models (数据库表定义)
@@ -52,12 +49,9 @@ class WeatherSnapshot(Base):
     data = Column(Text) # JSON string
     created_at = Column(DateTime, default=datetime.utcnow)
 
-
 # ==========================================
 # 2. Pydantic Models (API 请求/响应 Schema)
 # ==========================================
-
-# --- Auth 相关 (匹配 auth_router.py) ---
 
 class AuthUser(BaseModel):
     id: int
@@ -78,15 +72,11 @@ class AuthResponse(BaseModel):
     user: AuthUser
     message: str
 
-# --- Chat 相关 (匹配 app.py) ---
-
 class ChatRequest(BaseModel):
     user_message: str
 
 class ChatResponse(BaseModel):
     response: str
-
-# --- Social & Group 相关 (匹配 social_router.py) ---
 
 class GroupMessageModel(BaseModel):
     id: int
@@ -113,9 +103,6 @@ class FriendRequestItem(BaseModel):
     from_username: str
     from_user_code: str
     created_at: datetime
-
-class FriendRequestsResponse(BaseModel):
-    pass 
 
 class FriendAcceptRequest(BaseModel):
     request_id: int

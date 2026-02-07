@@ -1,51 +1,33 @@
-# backend/social_router.py
-
 from typing import List, Dict, Any
 from uuid import UUID
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
 
-# --- Internal Imports ---
-from auth_router import get_current_user
-from pg_db import fetch_all, fetch_one, fetch_one_returning, execute, get_cursor
-# 引入 SessionLocal 用于后台任务创建独立连接
-from db import get_db, SessionLocal 
-from models import (
+# ✅ 修正：所有内部引用都加上 app. 前缀
+from app.routers.auth import get_current_user
+from app.core.database import fetch_all, fetch_one, fetch_one_returning, execute, get_cursor, SessionLocal 
+from app.models.sql_models import (
     AuthUser, FriendAddRequest, FriendRequestItem, FriendAcceptRequest, FriendSummary,
     GroupCreateRequest, GroupSummary, GroupMemberInfo, GroupMessageModel, MessageCreateRequest,
     DMRequest, InviteRequest, KickRequest, RemoveFriendRequest
 )
-
-# --- AI Service ---
-from auto_planner_service import AutoPlannerService
+# ✅ 修正：AI 服务引用
+from app.services.planner import AutoPlannerService
 
 router = APIRouter(prefix="/social", tags=["social"])
 
-# ==========================================
-# 🛑 AI 后台任务包装器 (核心修复)
-# ==========================================
 async def run_ai_task_in_background(group_id: str, content: str):
-    """
-    在后台运行 AI 逻辑。
-    必须手动创建 SessionLocal()，因为 FastAPI 的 Depends(get_db) 会在请求结束时关闭连接。
-    """
     print(f"🔄 [Background] Starting AI task for Group {group_id}...")
-    db = SessionLocal() # 1. 创建独立连接
+    db = SessionLocal()
     try:
         service = AutoPlannerService(db)
-        # 2. 执行流水线 (意图识别 -> 查库 -> 生成 -> 存库)
         await service.run_pipeline(chat_id=group_id, user_message=content)
         print(f"✅ [Background] AI task finished for Group {group_id}")
     except Exception as e:
         print(f"❌ [Background] AI task failed: {e}")
     finally:
-        db.close() # 3. 务必关闭，防止连接泄漏
+        db.close()
 
-# ==========================================
-# FRIENDS (好友系统)
-# ==========================================
-
+# --- FRIENDS ---
 @router.get("/friends", response_model=Dict[str, List[FriendSummary]])
 def list_friends(u: AuthUser = Depends(get_current_user)):
     rows = fetch_all("SELECT u.id, u.username, u.user_code FROM friendships f JOIN users u ON f.friend_id = u.id WHERE f.user_id = %(me)s", {"me": u.id})
@@ -95,10 +77,7 @@ def get_or_create_dm(p: DMRequest, u: AuthUser = Depends(get_current_user)):
     execute("INSERT INTO group_members (group_id, user_id, role) VALUES (%(gid)s, %(u)s, 'admin')", {"gid": gid, "u": p.friend_id})
     return {"group_id": gid, "new": True}
 
-# ==========================================
-# GROUPS (群组系统)
-# ==========================================
-
+# --- GROUPS ---
 @router.get("/groups", response_model=Dict[str, List[GroupSummary]])
 def list_groups(u: AuthUser = Depends(get_current_user)):
     rows = fetch_all("SELECT g.id, g.name, g.description, g.created_at FROM groups g JOIN group_members gm ON g.id=gm.group_id WHERE gm.user_id=%(u)s ORDER BY g.created_at DESC", {"u": u.id})
@@ -150,27 +129,11 @@ def get_msgs(group_id: UUID, u: AuthUser = Depends(get_current_user)):
     rows = fetch_all("SELECT id, group_id, sender_display as sender, role, content, created_at FROM group_messages WHERE group_id=%(gid)s ORDER BY created_at ASC LIMIT 100", {"gid": str(group_id)})
     return {"messages": [GroupMessageModel(**r) for r in rows]}
 
-# 🔥🔥🔥 核心发送接口 (HTTP Trigger) 🔥🔥🔥
 @router.post("/groups/{group_id}/messages", response_model=GroupMessageModel)
-def send_msg(
-    group_id: UUID, 
-    p: MessageCreateRequest, 
-    background_tasks: BackgroundTasks, # 注入后台任务管理器
-    u: AuthUser = Depends(get_current_user)
-):
-    # 1. 快速写入用户消息 (User Message)
-    # 使用 Raw SQL 写入，速度最快，不涉及 ORM Session
+def send_msg(group_id: UUID, p: MessageCreateRequest, background_tasks: BackgroundTasks, u: AuthUser = Depends(get_current_user)):
     r = fetch_one_returning(
         "INSERT INTO group_messages (group_id, user_id, sender_display, role, content) VALUES (%(gid)s, %(u)s, %(s)s, 'user', %(c)s) RETURNING id, group_id, sender_display as sender, role, content, created_at",
         {"gid": str(group_id), "u": u.id, "s": u.username, "c": p.content}
     )
-
-    # 2. 触发后台 AI 任务 (Fire and Forget)
-    # 使用 run_ai_task_in_background 包装器，确保有独立的 DB 连接
-    background_tasks.add_task(
-        run_ai_task_in_background, 
-        group_id=str(group_id), 
-        content=p.content
-    )
-
+    background_tasks.add_task(run_ai_task_in_background, group_id=str(group_id), content=p.content)
     return GroupMessageModel(**r)
