@@ -1,16 +1,15 @@
-# frontend/ui_friends.py
 from __future__ import annotations
 from typing import List, Dict, Any
 import streamlit as st
 
-from api import (
+# ✅ 修正引用路径
+from app.core.api import (
     fetch_friends,
     send_friend_request,
     fetch_friend_requests,
     accept_friend_request,
-    get_or_create_dm,  # <--- 记得导入这个新函数
+    get_or_create_dm,
 )
-
 
 def render_add_friend_page(username: str) -> None:
     st.markdown(
@@ -24,12 +23,10 @@ def render_add_friend_page(username: str) -> None:
         unsafe_allow_html=True,
     )
 
-    # Back Button
     if st.button("← Back to home", key="back_from_add_friend"):
         st.session_state.view_mode = "home"
         st.rerun()
 
-    # ---- Add Friend ----
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Add friend")
 
@@ -53,7 +50,6 @@ def render_add_friend_page(username: str) -> None:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---- Incoming Requests ----
     try:
         requests = fetch_friend_requests()
     except Exception:
@@ -80,7 +76,6 @@ def render_add_friend_page(username: str) -> None:
                         st.error(f"Unable to accept request: {exc}")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---- Friends List (With Chat Button) ----
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Your friends")
 
@@ -98,16 +93,13 @@ def render_add_friend_page(username: str) -> None:
             name = f.get("display_name") or f.get("username") or "Friend"
             code = f.get("user_code") or ""
             
-            # 使用列布局：左边显示名字，右边显示 Chat 按钮
             c1, c2 = st.columns([3, 1])
             with c1:
                 st.markdown(f"**{name}** (`{code}`)")
             with c2:
                 if st.button("💬 Chat", key=f"dm_btn_{fid}"):
                     try:
-                        # 1. 获取或创建 DM Group
                         dm_group_id = get_or_create_dm(fid)
-                        # 2. 设置状态跳转
                         st.session_state.active_group = dm_group_id
                         st.session_state.view_mode = "chat"
                         st.rerun()

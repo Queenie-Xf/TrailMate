@@ -48,17 +48,19 @@ services:
     build: ./frontend
     container_name: dsci560_hikebot-ui-1
     working_dir: /app
-    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.fileWatcherType=poll
+    # ✅ 修改这里指向 app/main.py
+    command: streamlit run app/main.py --server.port 8501 --server.address 0.0.0.0 --server.fileWatcherType=poll
     volumes:
       - ./frontend:/app
     env_file:
       - ./frontend/.env.example
     environment:
       - PYTHONUNBUFFERED=1
+      # ✅ 关键：添加 PYTHONPATH
+      - PYTHONPATH=/app
     ports:
       - "8501:8501"
     depends_on:
       - api
-
 volumes:
   postgres-data:

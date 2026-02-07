@@ -1,9 +1,7 @@
-# ui_groups.py
-
-from api import fetch_friends, create_group, fetch_groups
+# ✅ 修正引用路径
+from app.core.api import fetch_friends, create_group, fetch_groups
 import streamlit as st
 from typing import List, Dict, Any
-
 
 def render_create_group_page(username: str) -> None:
     st.markdown(
@@ -17,12 +15,10 @@ def render_create_group_page(username: str) -> None:
         unsafe_allow_html=True,
     )
 
-    # Back Button
     if st.button("← Back to home", key="back_from_create_group"):
         st.session_state.view_mode = "home"
         st.rerun()
 
-    # ---- My groups ----
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### My groups")
     try:
@@ -40,7 +36,7 @@ def render_create_group_page(username: str) -> None:
             desc = g.get("description") or ""
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"**{name}**  \n{desc}")
+                st.markdown(f"**{name}** \n{desc}")
             with col2:
                 if st.button("Enter chat", key=f"enter_group_{gid}"):
                     st.session_state.active_group = gid
@@ -48,7 +44,6 @@ def render_create_group_page(username: str) -> None:
                     st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---- Create group ----
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### Create a group")
 
@@ -68,7 +63,6 @@ def render_create_group_page(username: str) -> None:
         friend_labels.append(label)
         friend_map[label] = f
 
-    # ---- Group Name + Members ----
     name = st.text_input("Group name")
     selected_labels = st.multiselect(
         "Invite friends (optional)",
@@ -78,7 +72,6 @@ def render_create_group_page(username: str) -> None:
     member_codes = [friend_map[l]["user_code"] for l in selected_labels]
     all_members = list(dict.fromkeys(member_codes))
 
-    # ---- Create Group ----
     if st.button("Create Group", type="primary"):
         if not name.strip():
             st.error("Please enter a group name.")
@@ -91,7 +84,6 @@ def render_create_group_page(username: str) -> None:
 
             st.success(f"{msg} (ID: {group_id})")
 
-            # Auto open group chat
             st.session_state.active_group = group_id
             st.session_state.view_mode = "chat"
             st.rerun()

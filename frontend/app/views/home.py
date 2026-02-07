@@ -1,23 +1,19 @@
-from __future__ import annotations
 import streamlit as st
 from datetime import datetime as _dt
-from typing import Dict, Any, List
-from streamlit_autorefresh import st_autorefresh  # 引入：自动刷新
+from streamlit_autorefresh import st_autorefresh
 
-# 从 ui_chat 导入我们刚才写好的核心逻辑
-from ui_chat import render_rich_message, normalize_group_message 
-
-from api import (
+# ✅ 修正引用
+from app.views.chat import render_rich_message, normalize_group_message 
+from app.views.groups import render_create_group_page
+from app.views.friends import render_add_friend_page
+from app.components.common import render_message_bubble
+from app.core.api import (
     fetch_groups, create_group, join_group, leave_group, 
-    fetch_group_messages, send_group_message, fetch_group_members, fetch_group_members_detailed,
-    ask_ai_recommend,
-    fetch_friends, fetch_friend_requests, send_friend_request, accept_friend_request, get_or_create_dm,
-    send_planning_message,
-    invite_group_member, kick_group_member,
-    remove_friend
+    fetch_group_messages, send_group_message, fetch_group_members_detailed,
+    ask_ai_recommend, fetch_friends, fetch_friend_requests, 
+    send_friend_request, accept_friend_request, get_or_create_dm,
+    send_planning_message, invite_group_member, kick_group_member, remove_friend
 )
-from state import in_group
-from ui_common import render_message_bubble
 
 def render_social_sidebar(username: str):
     """渲染左侧的好友/群组导航栏"""
@@ -285,17 +281,11 @@ def render_group_interface(group_id: str, username: str):
                  st.rerun()
                  
 def render_home_page(username: str) -> None:
-    # 🐞 DEBUG: 打印 active_group 的值
-    active_group_id = st.session_state.get("active_group")
-    st.sidebar.markdown(f"**DEBUG: Active Group ID:** `{active_group_id}`")
+    view_mode = st.session_state.get("view_mode", "home")
     
-    if st.session_state.active_group is None: process_ai_response()
-    
-    col_left, col_right = st.columns([1, 4], gap="medium")
-    with col_left: render_social_sidebar(username)
-    with col_right:
-        if active_group_id: 
-            render_group_interface(active_group_id, username)
-        else: 
-            render_ai_interface(username)
-            st.warning("⚠️ Group ID is None or AI Assistant selected.")
+    if view_mode == "create_group":
+        render_create_group_page(username)
+        return
+    elif view_mode == "add_friend":
+        render_add_friend_page(username)
+        return

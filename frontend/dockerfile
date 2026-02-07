@@ -13,4 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8501
 
 # 默认启动命令
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# 确保 PYTHONPATH 包含 /app 目录，这样 Python 才能识别 app.core...
+ENV PYTHONPATH=/app
+
+# 启动新的入口文件
+CMD ["streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
