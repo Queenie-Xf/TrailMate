@@ -17,6 +17,23 @@ from app.core.api import (
 from app.core.state import ensure_members_cached, in_group
 from app.components.common import render_message_bubble
 
+# --- 新增：对接 main.py 的入口函数 ---
+def render_chat_page():
+    """这是对齐 main.py 第 15 行导入需求的关键入口"""
+    active_group = st.session_state.get("active_group")
+    username = st.session_state.get("user")
+    
+    if not active_group:
+        st.info("💡 请在侧边栏选择一个群组或好友开始聊天。")
+        if st.button("返回首页"):
+            st.session_state.view_mode = "home"
+            st.rerun()
+        return
+
+    # 调用 home.py 中你已经写好的渲染逻辑
+    from app.views.home import render_group_interface
+    render_group_interface(active_group, username)
+
 def normalize_group_message(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize backend group message payload."""
     sender = raw.get("sender") or raw.get("sender_display") or "Unknown"

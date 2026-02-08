@@ -92,3 +92,7 @@ def render_create_group_page(username: str) -> None:
             st.error(f"Unable to create group: {exc}")
 
     st.markdown("</div>", unsafe_allow_html=True)
+    # frontend/app/views/groups.py
+
+# ✅ 添加别名，这样 main.py 就能找到它想要的名字了
+render_groups_page = render_create_group_page

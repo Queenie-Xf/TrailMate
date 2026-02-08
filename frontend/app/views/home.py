@@ -45,8 +45,18 @@ def render_social_sidebar(username: str):
     pending_count = len(pending_reqs)
     if pending_count > 0: st.warning(f"🔔 {pending_count} Friend Request(s)")
 
-    display_groups = [g for g in all_groups if not (g.get("name") or "").upper().startswith("DM:")]
-
+    # 修改 render_social_sidebar 中的第 48 行
+    display_groups = []
+    for g in all_groups:
+    # ✅ 只有当 g 是字典时才调用 .get()
+        if isinstance(g, dict):
+            name = g.get("name") or ""
+            if not name.upper().startswith("DM:"):
+                display_groups.append(g)
+        else:
+        # 如果 g 意外变成了字符串，进行兼容处理
+            if not str(g).upper().startswith("DM:"):
+                display_groups.append({"id": g, "name": g})
     st.markdown("### 🏔 Groups")
     if st.button("🤖 AI Assistant", key="btn_group_ai", use_container_width=True):
         st.session_state.active_group = None
@@ -289,3 +299,20 @@ def render_home_page(username: str) -> None:
     elif view_mode == "add_friend":
         render_add_friend_page(username)
         return
+    
+def render_home_page(username: str) -> None:
+    # 渲染左侧社交侧边栏
+    render_social_sidebar(username)
+    
+    # 获取当前的活动群组 ID
+    active_group = st.session_state.get("active_group")
+    
+    # 逻辑分发
+    if active_group:
+        # 如果选中了某个群组或私聊，进入群聊界面
+        render_group_interface(active_group, username)
+    else:
+        # 如果没有选中群组，则进入 AI 助手或者是你原本的“搜索/路线推荐”首页
+        # 你可以根据需要切换这两个函数
+        render_ai_interface(username) 
+        # process_ai_response() # 别忘了处理 AI 的回复逻辑

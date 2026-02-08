@@ -24,7 +24,6 @@ services:
       - "host.docker.internal:host-gateway"
 
   postgres:
-    # ✅ 修复 2：必须使用支持地图功能的 postgis 镜像，否则 seed_db 会失败
     image: postgis/postgis:16-3.4-alpine
     restart: unless-stopped
     environment:
@@ -32,9 +31,10 @@ services:
       POSTGRES_USER: hikebot
       POSTGRES_PASSWORD: hikebot
     ports:
-      # 对外暴露 5433 (DBeaver连这个)，对内还是 5432
       - "5433:5432"
     volumes:
+      # ✅ 关键：将数据库内部数据映射到具名卷 postgres-data
+      # 即使容器被删除，只要不手动执行 docker compose down -v，数据就会保留
       - postgres-data:/var/lib/postgresql/data
       - ./backend/migrations:/app/migrations:ro
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import streamlit as st
 
-# ✅ 修正引用路径
 from app.core.api import (
     fetch_friends,
     send_friend_request,
@@ -12,98 +11,79 @@ from app.core.api import (
 )
 
 def render_add_friend_page(username: str) -> None:
-    st.markdown(
-        """
-        <div class="hero">
-          <div class="pill">Trail partners</div>
-          <h3 style="margin:6px 0;">Add & manage friends</h3>
-          <p style="margin:0;color:var(--muted);">Share your Hike ID to build your crew and drop into group chats faster.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # 顶部标题与手动刷新按钮
+    col_t, col_r = st.columns([4, 1])
+    with col_t:
+        st.markdown("### Add & manage friends")
+    with col_r:
+        if st.button("🔄 Refresh"):
+            st.rerun()
 
     if st.button("← Back to home", key="back_from_add_friend"):
         st.session_state.view_mode = "home"
         st.rerun()
 
+    # 添加好友卡片
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("### Add friend")
-
-    friend_code = st.text_input(
-        "Friend code (Hike ID)",
-        placeholder="Enter your friend's Hike ID (user code)",
-        key="add_friend_code",
-    )
-
-    if st.button("Send friend request", type="primary", key="btn_send_friend_request"):
-        if not friend_code.strip():
-            st.error("Please enter a friend code.")
-        else:
+    friend_code = st.text_input("Friend code (Hike ID)", placeholder="Enter Hike ID", key="add_friend_code")
+    if st.button("Send friend request", type="primary"):
+        if friend_code.strip():
             try:
-                res = send_friend_request(friend_code.strip())
-                name = res.get("username") or res.get("display_name") or friend_code
-                st.success(f"Friend request sent to {name}.")
+                send_friend_request(friend_code.strip())
+                st.success("Request sent!")
                 st.rerun()
-            except Exception as exc:
-                st.error(f"Unable to send friend request: {exc}")
-
+            except Exception as e:
+                st.error(f"Error: {e}")
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # 待处理请求 (解析逻辑对齐后端)
     try:
-        requests = fetch_friend_requests()
-    except Exception:
+        raw_reqs = fetch_friend_requests()
+        requests = raw_reqs.get("requests", []) if isinstance(raw_reqs, dict) else []
+    except:
         requests = []
 
     if requests:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### Incoming requests")
         for req in requests:
-            rid = req.get("request_id") or req.get("id")
-            from_name = req.get("from_username") or "Someone"
-            from_code = req.get("from_user_code") or "N/A"
-
+            rid = req.get("id")
+            from_name = req.get("from_username", "Unknown")
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"- **{from_name}** (`{from_code}`) wants to add you.")
+                st.write(f"🤝 **{from_name}** wants to add you.")
             with col2:
-                if st.button("Accept", key=f"accept-{rid}"):
+                if st.button("Accept", key=f"acc_{rid}"):
                     try:
                         accept_friend_request(rid)
-                        st.success(f"You are now friends with {from_name}.")
+                        st.success("Accepted!")
                         st.rerun()
-                    except Exception as exc:
-                        st.error(f"Unable to accept request: {exc}")
-        st.markdown("</div>", unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
 
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    # 好友列表 (解析逻辑对齐后端)
     st.markdown("### Your friends")
-
     try:
-        friends = fetch_friends()
-    except Exception as exc:
+        raw_friends = fetch_friends()
+        friends = raw_friends.get("friends", []) if isinstance(raw_friends, dict) else []
+    except:
         friends = []
-        st.error(f"Unable to load friends: {exc}")
 
     if not friends:
-        st.caption("You have no friends yet.")
+        st.caption("No friends yet.")
     else:
         for f in friends:
             fid = f.get("id")
-            name = f.get("display_name") or f.get("username") or "Friend"
-            code = f.get("user_code") or ""
-            
+            fname = f.get("username", "Friend")
             c1, c2 = st.columns([3, 1])
             with c1:
-                st.markdown(f"**{name}** (`{code}`)")
+                st.write(f"**{fname}**")
             with c2:
-                if st.button("💬 Chat", key=f"dm_btn_{fid}"):
+                if st.button("💬 Chat", key=f"chat_{fid}"):
                     try:
-                        dm_group_id = get_or_create_dm(fid)
-                        st.session_state.active_group = dm_group_id
+                        dm_res = get_or_create_dm(fid)
+                        # 支持后端返回 {"group_id": "..."} 的结构
+                        st.session_state.active_group = dm_res.get("group_id") if isinstance(dm_res, dict) else dm_res
                         st.session_state.view_mode = "chat"
                         st.rerun()
-                    except Exception as exc:
-                        st.error(f"Failed to open chat: {exc}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Chat failed: {e}")
