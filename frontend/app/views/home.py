@@ -1,8 +1,10 @@
 import streamlit as st
 from datetime import datetime as _dt
 from streamlit_autorefresh import st_autorefresh
+import json
+import re
 
-# ✅ 修正引用
+# ✅ Precise Imports
 from app.views.chat import render_rich_message, normalize_group_message 
 from app.views.groups import render_create_group_page
 from app.views.friends import render_add_friend_page
@@ -15,282 +17,296 @@ from app.core.api import (
     send_planning_message, invite_group_member, kick_group_member, remove_friend
 )
 
+# --- SIDEBAR COMPONENT ---
 def render_social_sidebar(username: str):
-    """渲染左侧的好友/群组导航栏"""
+    """Detailed sidebar with Debug info, Group filtering, and Friend management"""
     
-    # 🐞 DEBUG: 打印 active_group 的值 (在 sidebar 中显示)
+    # 🐞 DEBUG SECTION
     active_group_id = st.session_state.get("active_group")
     st.sidebar.markdown(f"**DEBUG: Active Group ID:** `{active_group_id}`")
     
-    c_ref, c_prof = st.columns([1, 3])
-    with c_ref:
-        if st.button("🔄", help="Refresh Data"): st.rerun()
-    with c_prof: st.caption("Last updated: Just now")
+    col_refresh, col_status = st.sidebar.columns([1, 3])
+    with col_refresh:
+        if st.button("🔄", help="Force Refresh Data"): 
+            st.rerun()
+    with col_status: 
+        st.caption(f"Last sync: {_dt.now().strftime('%H:%M:%S')}")
 
+    # User Identity Card
     my_code = st.session_state.get("user_code", "Loading...")
-    with st.container(border=True):
+    with st.sidebar.container(border=True):
         st.markdown(f"**👤 {username}**")
         st.code(my_code, language="text")
-        st.caption("Share this ID with friends.")
+        st.caption("Share your Hike ID with others.")
 
-    st.markdown("---")
+    st.sidebar.markdown("---")
 
-    try: all_groups = fetch_groups()
-    except: all_groups = []
-    try: friends = fetch_friends()
-    except: friends = []
-    try: pending_reqs = fetch_friend_requests()
-    except: pending_reqs = []
+    # 1. Data Fetching with Safety Checks
+    try:
+        raw_groups = fetch_groups()
+        all_groups = raw_groups if isinstance(raw_groups, list) else []
+    except Exception:
+        all_groups = []
+
+    try:
+        raw_friends = fetch_friends()
+        if isinstance(raw_friends, dict):
+            friends = raw_friends.get("friends", [])
+        else:
+            friends = raw_friends if isinstance(raw_friends, list) else []
+    except Exception:
+        friends = []
+
+    try:
+        pending_reqs = fetch_friend_requests()
+        # Handle dict or list return types
+        if isinstance(pending_reqs, dict):
+            pending_reqs = pending_reqs.get("requests", [])
+    except Exception:
+        pending_reqs = []
     
     pending_count = len(pending_reqs)
-    if pending_count > 0: st.warning(f"🔔 {pending_count} Friend Request(s)")
+    if pending_count > 0:
+        st.sidebar.warning(f"🔔 {pending_count} New Friend Request(s)")
 
-    # 修改 render_social_sidebar 中的第 48 行
+    # 2. Group Filtering (DM vs Group)
     display_groups = []
     for g in all_groups:
-    # ✅ 只有当 g 是字典时才调用 .get()
         if isinstance(g, dict):
-            name = g.get("name") or ""
-            if not name.upper().startswith("DM:"):
+            name = (g.get("name") or "").upper()
+            if not name.startswith("DM:"):
                 display_groups.append(g)
-        else:
-        # 如果 g 意外变成了字符串，进行兼容处理
-            if not str(g).upper().startswith("DM:"):
+        elif isinstance(g, str): # Fallback for string-only returns
+            if not g.upper().startswith("DM:"):
                 display_groups.append({"id": g, "name": g})
-    st.markdown("### 🏔 Groups")
-    if st.button("🤖 AI Assistant", key="btn_group_ai", use_container_width=True):
+
+    st.sidebar.markdown("### 🏔 Groups")
+    if st.sidebar.button("🤖 AI Personal Assistant", key="btn_home_ai", use_container_width=True):
         st.session_state.active_group = None
+        st.session_state.show_ai_planning = True
         st.rerun()
 
     for g in display_groups:
         gid = g.get("id")
-        name = g.get("name") or "Group"
-        is_active = st.session_state.get("active_group") == gid
-        label = f"📍 {name}" if is_active else f"# {name}"
-        type_primary = "primary" if is_active else "secondary"
-        if st.button(label, key=f"btn_group_{gid}", type=type_primary, use_container_width=True):
+        name = g.get("name") or "Unnamed Group"
+        is_active = (str(gid) == str(active_group_id))
+        
+        btn_label = f"📍 {name}" if is_active else f"# {name}"
+        if st.sidebar.button(
+            btn_label, 
+            key=f"side_grp_{gid}", 
+            use_container_width=True,
+            type="primary" if is_active else "secondary"
+        ):
             st.session_state.active_group = gid
+            st.session_state.show_ai_planning = False
+            st.session_state.view_mode = "chat"
             st.rerun()
 
-    st.markdown("---")
-    st.markdown("### 👥 Friends")
-    if not friends: st.caption("No friends added yet.")
+    st.sidebar.markdown("---")
+
+    # 3. Friend List Rendering
+    st.sidebar.markdown("### 👥 Friends")
+    if not friends:
+        st.sidebar.caption("No friends found.")
     else:
         for f in friends:
-            fid = f.get("id")
-            name = f.get("display_name") or f.get("username")
-            code = f.get("user_code")
-            if st.button(f"👤 {name}", key=f"dm_sidebar_{fid}", use_container_width=True, help=f"ID: {code}"):
-                try:
-                    dm_id = get_or_create_dm(fid)
-                    st.session_state.active_group = dm_id
-                    st.rerun()
-                except Exception as e: st.error(str(e))
+            if isinstance(f, dict):
+                fid = f.get("id")
+                fname = f.get("display_name") or f.get("username") or "Friend"
+                fcode = f.get("user_code", "N/A")
+            else:
+                fid, fname, fcode = f, f, "N/A"
 
-    st.markdown("---")
+            if st.sidebar.button(f"👤 {fname}", key=f"side_dm_{fid}", use_container_width=True, help=f"ID: {fcode}"):
+                try:
+                    dm_res = get_or_create_dm(fid)
+                    # Support both raw ID string or dict response
+                    st.session_state.active_group = dm_res.get("group_id") if isinstance(dm_res, dict) else dm_res
+                    st.session_state.show_ai_planning = False
+                    st.session_state.view_mode = "chat"
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"DM Error: {e}")
+
+    st.sidebar.markdown("---")
     
-    with st.expander("➕ Create Group"):
-        new_grp_name = st.text_input("Group Name", key="new_grp_name")
-        friend_options = {f"{f['username']} (@{f['user_code']})": f['user_code'] for f in friends}
-        selected_labels = st.multiselect("Invite Friends", options=list(friend_options.keys()), key="create_grp_invite")
-        if st.button("Create", key="do_create_grp", use_container_width=True):
-            if new_grp_name:
-                try:
-                    codes = [friend_options[l] for l in selected_labels]
-                    res = create_group(new_grp_name, codes)
-                    st.toast("Group Created Successfully! 🎉")
-                    st.session_state.active_group = res["group_id"]
-                    st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
-            else: st.warning("Please enter a group name.")
+    # 4. Action Expanders
+    with st.sidebar.expander("➕ Create New Group"):
+        new_name = st.text_input("Name", key="sidebar_new_grp_name")
+        friend_opts = {f"{f['username']}": f['user_code'] for f in friends if isinstance(f, dict)}
+        selected = st.multiselect("Invite", options=list(friend_opts.keys()))
+        if st.button("Initialize Group", use_container_width=True):
+            if new_name:
+                codes = [friend_opts[s] for s in selected]
+                res = create_group(new_name, codes)
+                st.session_state.active_group = res.get("group_id")
+                st.rerun()
 
-    add_label = f"👋 Add Friend 🔴 ({pending_count})" if pending_count > 0 else "👋 Add Friend"
-    with st.expander(add_label, expanded=(pending_count > 0)):
+    add_btn_label = f"👋 Add Friend ({pending_count})" if pending_count > 0 else "👋 Add Friend"
+    with st.sidebar.expander(add_btn_label):
         if pending_reqs:
-            st.info("Pending Requests:")
             for r in pending_reqs:
-                col_info, col_btn = st.columns([3, 2])
-                with col_info:
-                    st.write(f"**{r['from_username']}**")
-                    st.caption(f"ID: {r['from_user_code']}")
-                with col_btn:
-                    if st.button("Accept", key=f"acc_{r['id']}", type="primary"):
-                        accept_friend_request(r['id'])
-                        st.toast(f"You are now friends with {r['from_username']}! 🤝")
-                        st.rerun()
+                st.write(f"**{r.get('from_username')}**")
+                if st.button("Accept", key=f"sidebar_acc_{r.get('id')}"):
+                    accept_friend_request(r.get('id'))
+                    st.rerun()
             st.divider()
+        
+        target_id = st.text_input("Enter Hike ID")
+        if st.button("Send Request", use_container_width=True):
+            send_friend_request(target_id)
+            st.toast("Request Sent!")
 
-        st.write("Add by ID:")
-        new_friend_code = st.text_input("Enter Friend's ID", key="new_friend_code")
-        if st.button("Send Request", key="do_add_friend", use_container_width=True):
-            if new_friend_code:
-                try: 
-                    send_friend_request(new_friend_code)
-                    st.toast(f"Request sent to {new_friend_code} 🚀")
-                except Exception as e: st.error(f"Failed: {e}")
-
+# --- AI ASSISTANT INTERFACE ---
 def render_ai_interface(username: str):
-    """首页的 AI 助手界面 (非群聊)"""
+    """Global AI Assistant interface with card support and response processing"""
     st.title("🤖 Trail Assistant")
-    st.caption("Ask me about trails, weather, gear, or safety.")
+    st.caption("Plan your next summit with real-time AI guidance.")
     
-    # 这里也可以加上自动刷新，以防 AI 回复慢
     st_autorefresh(interval=5000, key="ai_home_refresh")
 
+    # Message History Container
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
     with st.container(border=True, height=500):
+        if not st.session_state.messages:
+            st.info("Hello! Ask me to recommend a trail or check the weather for your next hike.")
         for msg in st.session_state.messages: 
-            # 尝试用 render_rich_message 渲染，支持卡片
             try:
                 render_rich_message(msg)
-            except:
+            except Exception:
                 render_message_bubble(msg)
 
-    prompt = st.chat_input("Ask HikeBot...", key="ai_chat_input")
+    # Chat Input
+    prompt = st.chat_input("Where should we hike next?", key="ai_chat_input")
     if prompt:
-        st.session_state.messages.append({"sender": username, "role": "user", "content": prompt, "timestamp": _dt.utcnow().isoformat()})
+        st.session_state.messages.append({
+            "sender": username, 
+            "role": "user", 
+            "content": prompt, 
+            "timestamp": _dt.utcnow().isoformat()
+        })
+        # Process the AI response immediately
+        with st.spinner("AI is analyzing trails..."):
+            process_ai_response()
         st.rerun()
 
 def process_ai_response():
+    """Trigger the backend AI pipeline for planning messages"""
     msgs = st.session_state.messages
     if msgs and msgs[-1]["role"] == "user":
-        try: reply = send_planning_message(msgs[-1]["content"])
-        except Exception as exc: reply = f"⚠️ Error: {exc}"
-        msgs.append({"sender": "HikeBot", "role": "assistant", "content": reply, "timestamp": _dt.utcnow().isoformat()})
-        st.rerun()
+        try: 
+            reply = send_planning_message(msgs[-1]["content"])
+        except Exception as exc: 
+            reply = f"⚠️ AI Assistant is currently offline: {exc}"
+        
+        msgs.append({
+            "sender": "HikeBot", 
+            "role": "assistant", 
+            "content": reply, 
+            "timestamp": _dt.utcnow().isoformat()
+        })
 
+# --- CHAT & GROUP INTERFACE ---
 def render_group_interface(group_id: str, username: str):
-    """渲染主群聊界面 (集成自动刷新 + 卡片消息)"""
+    """Detailed Chat Interface with Member Panel and AI Copilot actions"""
     
-    # 🔥 核心功能 1: 自动刷新 (每 5 秒拉取最新消息)
     st_autorefresh(interval=5000, key=f"chat_refresh_{group_id}")
 
-    # 💥 核心修复：将所有 API 调用移到顶部，确保数据在布局前加载
-    members = [] 
-    all_grps = []
-    
-    # --- 提前加载数据 ---
+    # Load Data
     try:
         members = fetch_group_members_detailed(group_id)
-    except Exception as e:
-        st.error(f"Failed to load group members: {e}")
-        members = [] # 确保失败时是空列表
-        
-    try:
         all_grps = fetch_groups()
     except Exception:
-        all_grps = [] # 确保失败时是空列表
+        members, all_grps = [], []
 
-    # 1. 判断是私聊 (DM) 还是群聊
+    # Identify Group Metadata
     is_dm = False
-    group_name = "Chat Room"
-    
+    group_name = "Chat"
     for g in all_grps:
-        if g["id"] == group_id: 
-            group_name = g["name"]
-            if group_name.startswith("DM:"):
+        if str(g.get("id")) == str(group_id):
+            group_name = g.get("name")
+            if (group_name or "").startswith("DM:"):
                 is_dm = True
                 group_name = group_name.replace("DM: ", "💬 ")
             break
     
-    # Header 
-    c1, c2 = st.columns([6, 1.5])
-    with c1: st.title(group_name)
-    with c2:
-        if st.button("🚪 Exit", key=f"leave_{group_id}"):
+    # Header UI
+    head_left, head_right = st.columns([5, 1])
+    with head_left: st.title(group_name)
+    with head_right:
+        if st.button("🚪 Leave", key=f"exit_{group_id}"):
             leave_group(group_id)
             st.session_state.active_group = None
             st.rerun()
 
-    col_chat, col_info = st.columns([3, 1])
+    chat_col, info_col = st.columns([3, 1])
 
-    with col_info:
-        # AI Actions
+    with info_col:
+        # AI Actions Panel
         with st.container(border=True):
             st.markdown("#### ✨ AI Copilot")
-            st.caption("I'm listening for your plans...")
-            if st.button("🗺 Recommend Trails", use_container_width=True):
+            if st.button("🗺 Recommend Trail", use_container_width=True):
                 ask_ai_recommend(group_id)
-                st.toast("AI is thinking... wait a few seconds!")
-                st.rerun()
+                st.toast("AI is generating route cards...")
 
         st.markdown("---")
-        st.markdown("#### 👥 Members")
+        st.subheader("👥 Members")
         
-        # 成员渲染逻辑
         my_role = "member"
         current_uid = st.session_state.get("current_user_id")
 
-        if not members:
-            st.caption("No members loaded or API failed.")
-        
         for m in members:
             if m.get("user_id") == current_uid:
                 my_role = m.get("role")
-                break
-        
-        for m in members:
-            role_icon = "👑" if m["role"] == "admin" else "👤"
-            st.write(f"{role_icon} **{m['username']}**")
-            st.caption(f"@{m['user_code']}")
             
-            # Logic: If Admin AND not myself
-            if my_role == "admin" and m["user_id"] != current_uid:
-                # 🟢 UI Logic Switch: DM vs Group
+            role_icon = "👑" if m.get("role") == "admin" else "👤"
+            st.write(f"{role_icon} **{m.get('username')}**")
+            
+            # Admin Controls
+            if my_role == "admin" and m.get("user_id") != current_uid:
                 if is_dm:
-                    if st.button("🚫 Delete Friend", key=f"del_{m['user_id']}", type="primary"):
-                        remove_friend(m["user_id"])
-                        try: kick_group_member(group_id, m["user_id"])
-                        except: pass
-                        st.toast(f"Friend {m['username']} removed.")
-                        st.session_state.active_group = None 
+                    if st.button("Remove Friend", key=f"rem_f_{m.get('user_id')}"):
+                        remove_friend(m.get("user_id"))
+                        st.session_state.active_group = None
                         st.rerun()
                 else:
-                    if st.button("Kick", key=f"kick_{m['user_id']}", type="primary"):
-                        kick_group_member(group_id, m["user_id"])
+                    if st.button("Kick", key=f"kick_{m.get('user_id')}"):
+                        kick_group_member(group_id, m.get("user_id"))
                         st.rerun()
-            
-            # 使用分隔线分隔成员
+            st.caption(f"ID: {m.get('user_code')}")
             st.markdown("---")
 
-        if not is_dm and my_role == "admin":
-            with st.expander("Invite User"):
-                inv_code = st.text_input("User ID", key=f"inv_c_{group_id}")
-                if st.button("Invite", key=f"do_inv_{group_id}", use_container_width=True):
-                    try: invite_group_member(group_id, inv_code); st.success("Invited!")
-                    except Exception as e: st.error(f"Error: {e}")
-
-
-    with col_chat:
+    with chat_col:
+        # Chat History
         with st.container(border=True, height=550):
-            try: raws = fetch_group_messages(group_id)
-            except: raws = []
+            try: 
+                raw_messages = fetch_group_messages(group_id)
+            except Exception: 
+                raw_messages = []
             
-            if not raws: 
-                st.caption("Start the conversation!")
+            if not raw_messages: 
+                st.caption("No messages yet. Say hi to the group!")
             
-            for raw in raws:
-                # 🔥 核心功能 2: 渲染精美卡片
-                msg = normalize_group_message(raw)
-                render_rich_message(msg)
+            for raw in raw_messages:
+                msg_obj = normalize_group_message(raw)
+                render_rich_message(msg_obj)
 
-        # 权限检查和输入框
-        username_val = st.session_state.get("user")
-        is_member = False
-        if members:
-            for m in members:
-                if m['username'] == username_val:
-                    is_member = True
-                    break
+        # Message Input
+        if chat_input := st.chat_input(f"Message {group_name}..."):
+            send_group_message(group_id, chat_input)
+            st.rerun()
 
-        if not is_member and not is_dm:
-             if st.button("Join this group", type="primary"): join_group(group_id); st.rerun()
-        else:
-             group_name_display = group_name.replace("💬 ", "")
-             if st.chat_input(f"Message {group_name_display}...", key=f"chat_in_{group_id}"):
-                 send_group_message(group_id, st.session_state[f"chat_in_{group_id}"])
-                 st.rerun()
-                 
+# --- MAIN ROUTING LOGIC ---
 def render_home_page(username: str) -> None:
+    """Main routing entry point for the Home view"""
+    
+    # Always render sidebar
+    render_social_sidebar(username)
+    
+    # Handle Sub-Views (Navigation from Sidebar/Buttons)
     view_mode = st.session_state.get("view_mode", "home")
     
     if view_mode == "create_group":
@@ -299,20 +315,42 @@ def render_home_page(username: str) -> None:
     elif view_mode == "add_friend":
         render_add_friend_page(username)
         return
-    
-def render_home_page(username: str) -> None:
-    # 渲染左侧社交侧边栏
-    render_social_sidebar(username)
-    
-    # 获取当前的活动群组 ID
+
+    # Handle Active Contexts (Chat vs Assistant vs Home)
     active_group = st.session_state.get("active_group")
-    
-    # 逻辑分发
+    show_ai = st.session_state.get("show_ai_planning", False)
+
     if active_group:
-        # 如果选中了某个群组或私聊，进入群聊界面
         render_group_interface(active_group, username)
+    elif show_ai:
+        col_back, _ = st.columns([1, 5])
+        with col_back:
+            if st.button("← Home"):
+                st.session_state.show_ai_planning = False
+                st.rerun()
+        render_ai_interface(username)
     else:
-        # 如果没有选中群组，则进入 AI 助手或者是你原本的“搜索/路线推荐”首页
-        # 你可以根据需要切换这两个函数
-        render_ai_interface(username) 
-        # process_ai_response() # 别忘了处理 AI 的回复逻辑
+        # DEFAULT DASHBOARD (The "Home" Content)
+        st.title("🥾 HikeBot Dashboard")
+        st.markdown(f"Welcome back, **{username}**! Ready for the next peak?")
+        
+        # Quick Stats or Welcome Cards
+        card_l, card_r = st.columns(2)
+        with card_l:
+            with st.container(border=True):
+                st.subheader("Explore Trails")
+                st.write("Find new paths and check elevation data.")
+                if st.button("Start Search"):
+                    st.session_state.show_ai_planning = True
+                    st.rerun()
+        with card_r:
+            with st.container(border=True):
+                st.subheader("Manage Crew")
+                st.write("Connect with partners for your next trip.")
+                if st.button("Partners List"):
+                    st.session_state.view_mode = "friends"
+                    st.rerun()
+        
+        st.markdown("---")
+        st.subheader("Recent Activity")
+        st.caption("Stay tuned for upcoming hiking events in your groups.")
