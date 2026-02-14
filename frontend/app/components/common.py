@@ -1,4 +1,3 @@
-# ui_common.py
 from __future__ import annotations
 from datetime import datetime
 from html import escape
@@ -7,12 +6,12 @@ from typing import Dict, Any
 
 import streamlit as st
 
-
+# --- 你原来的样式逻辑 ---
 def render_message_bubble(msg: Dict[str, Any]) -> None:
     sender = msg.get("sender") or "User"
     content = msg.get("content", "")
-    ts = msg.get("timestamp")
-    is_me = sender == st.session_state.current_user
+    ts = msg.get("created_at") or msg.get("timestamp") # 兼容后端返回的字段名
+    is_me = sender == st.session_state.get("current_user")
 
     align = "flex-end" if is_me else "flex-start"
     bubble_color = "#e8f4ec" if is_me else "#ffffff"
@@ -22,7 +21,11 @@ def render_message_bubble(msg: Dict[str, Any]) -> None:
     time_str = ""
     if ts:
         try:
-            time_str = datetime.fromisoformat(ts).strftime("%H:%M")
+            # 兼容字符串或 datetime 对象
+            if isinstance(ts, str):
+                time_str = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M")
+            else:
+                time_str = ts.strftime("%H:%M")
         except Exception:
             time_str = str(ts)
 
@@ -50,3 +53,14 @@ def render_message_bubble(msg: Dict[str, Any]) -> None:
         """
     ).strip()
     st.markdown(html, unsafe_allow_html=True)
+
+# --- 新增的组件，用于修复好友页面的 ImportError ---
+def card_container():
+    """
+    为好友请求、群组卡片等提供统一的带边框容器
+    """
+    return st.container(border=True)
+
+def info_label(label: str, value: str):
+    """显示标签和值的组合"""
+    st.markdown(f"**{label}:** {value}")

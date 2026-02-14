@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Any, Dict, List
 import streamlit as st
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://api:8000")
+# 1. 确保 BACKEND_URL 正确，增加从 st.session_state 获取的备选方案
+BACKEND_URL = os.getenv("BACKEND_URL", st.session_state.get("BACKEND_URL", "http://api:8000"))
 
 def _auth_headers() -> Dict[str, str]:
     u = st.session_state.get("user")
@@ -26,10 +27,9 @@ def auth_request(path: str, username: str, password: str, user_code: str | None 
     st.session_state.authenticated = True
     return data.get("message", "OK")
 
-# --- 社交功能 (确保返回字典列表) ---
+# --- 社交功能 ---
 def fetch_friends():
     r = requests.get(f"{BACKEND_URL}/social/friends", headers=_auth_headers())
-    # 必须返回原始列表，供 home.py 使用 .get()
     return r.json().get("friends", [])
 
 def fetch_friend_requests():
@@ -48,7 +48,7 @@ def get_or_create_dm(fid: int):
     res = requests.post(f"{BACKEND_URL}/social/friends/dm", json={"friend_id": fid}, headers=_auth_headers()).json()
     return res.get("group_id")
 
-# --- 群组与聊天 (修复所有导入错误) ---
+# --- 群组与聊天 ---
 def fetch_groups():
     r = requests.get(f"{BACKEND_URL}/social/groups", headers=_auth_headers())
     return r.json().get("groups", [])
@@ -66,7 +66,6 @@ def fetch_group_members_detailed(group_id: str):
     return requests.get(f"{BACKEND_URL}/social/groups/{group_id}/members", headers=_auth_headers()).json().get("members", [])
 
 def fetch_group_members(group_id: str) -> List[str]:
-    """对齐 chat.py 的导入需求"""
     members = fetch_group_members_detailed(group_id)
     return [m["username"] for m in members]
 
@@ -94,3 +93,15 @@ def send_planning_message(message: str) -> str:
     r = requests.post(f"{BACKEND_URL}/chat", json={"user_message": message}, timeout=15)
     r.raise_for_status()
     return r.json().get("reply", "")
+
+def api_get(endpoint: str, params: dict = None):
+    r = requests.get(f"{BACKEND_URL}{endpoint}", params=params, headers=_auth_headers())
+    if r.status_code != 200:
+        raise RuntimeError(r.json().get("detail", f"GET {endpoint} failed"))
+    return r.json()
+
+def api_post(endpoint: str, json_data: dict = None):
+    r = requests.post(f"{BACKEND_URL}{endpoint}", json=json_data, headers=_auth_headers())
+    if r.status_code != 200:
+        raise RuntimeError(r.json().get("detail", f"POST {endpoint} failed"))
+    return r.json()
