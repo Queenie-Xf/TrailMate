@@ -38,7 +38,11 @@ def fetch_friend_requests():
     return requests.get(f"{BACKEND_URL}/social/friends/requests", headers=_auth_headers()).json().get("requests", [])
 
 def send_friend_request(fc: str):
-    return requests.post(f"{BACKEND_URL}/social/friends/add", json={"friend_code": fc}, headers=_auth_headers()).json()
+    # 🔴 唯一的修复在这里：手动检查状态码并抛出错误，以便 friends.py 能抓取到 404
+    r = requests.post(f"{BACKEND_URL}/social/friends/add", json={"friend_code": fc}, headers=_auth_headers())
+    if r.status_code != 200:
+        raise RuntimeError(r.json().get("detail", f"Error {r.status_code}"))
+    return r.json()
 
 def accept_friend_request(rid: int):
     return requests.post(f"{BACKEND_URL}/social/friends/accept", json={"request_id": rid}, headers=_auth_headers()).json()

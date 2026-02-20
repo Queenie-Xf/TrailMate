@@ -2,7 +2,8 @@ import streamlit as st
 from app.core.api import api_get, api_post
 from app.components.common import card_container
 
-def render_add_friend_page():
+# 🔴 修复点：加上 username 参数接收
+def render_add_friend_page(username: str = ""):
     """主入口逻辑"""
     st.header("🤝 Social Hub")
     
@@ -29,7 +30,8 @@ def render_add_friend_page():
                             if st.button("💬 Chat", key=f"chat_{f['id']}"):
                                 try:
                                     dm_res = api_post("/social/friends/dm", {"friend_id": f['id']})
-                                    st.session_state.current_group_id = dm_res.get("group_id")
+                                    st.session_state.active_group = dm_res.get("group_id")
+                                    st.session_state.view_mode = "chat"
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Chat failed: {e}")
@@ -55,10 +57,10 @@ def render_add_friend_page():
         except Exception as e:
             st.error(f"Requests error: {e}")
 
-    # --- 3. 添加好友 (UserID 报错功能) ---
+    # --- 3. 添加好友 ---
     with add_tab:
         st.subheader("Search by UserID")
-        st.caption("Hint: UserID is the numeric code given by your friend.")
+        st.caption("Enter the numeric UserID of your friend.")
         
         friend_code = st.text_input("Enter UserID", placeholder="e.g. 1001")
         
@@ -69,16 +71,16 @@ def render_add_friend_page():
                 try:
                     res = api_post("/social/friends/add", {"friend_code": friend_code})
                     if res.get("message") == "Exists":
-                        st.info("Already requested or already friends.")
+                        # 🔴 优化提示：明确告诉用户是对方还没同意
+                        st.info("⏳ Request is pending. Waiting for them to accept.")
                     else:
-                        st.success(f"✅ Request sent to {res.get('username', 'user')}!")
+                        st.success(f"✅ Request sent to {res.get('username', 'user')}! They need to accept it.")
                 
                 except Exception as e:
-                    err_text = str(e)
-                    # 匹配后端 social.py 返回的 HTTPException(404, "User not found")
-                    if "User not found" in err_text:
-                        st.error(f"❌ Error: The UserID '{friend_code}' does not exist. Please check the ID and try again.")
-                    elif "Cannot add self" in err_text:
+                    err_msg = str(e).lower()
+                    if "404" in err_msg or "not found" in err_msg:
+                        st.error(f"❌ User ID '{friend_code}' does not exist.")
+                    elif "cannot add self" in err_msg:
                         st.error("🚫 You cannot add yourself.")
                     else:
-                        st.error(f"Error: {err_text}")
+                        st.error(f"⚠️ Error: {str(e)}")
