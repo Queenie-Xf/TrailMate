@@ -124,7 +124,7 @@ def render_social_sidebar(username: str):
                         # 🔴 优化提示
                         st.sidebar.info("⏳ Pending. Waiting for them to accept.")
                     else:
-                        st.sidebar.toast("Request Sent! 🚀")
+                        st.toast("Request Sent! 🚀")
                 except Exception as e:
                     err_msg = str(e).lower()
                     if "404" in err_msg or "not found" in err_msg:

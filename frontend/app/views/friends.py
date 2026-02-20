@@ -2,7 +2,6 @@ import streamlit as st
 from app.core.api import api_get, api_post
 from app.components.common import card_container
 
-# 🔴 修复点：加上 username 参数接收
 def render_add_friend_page(username: str = ""):
     """主入口逻辑"""
     st.header("🤝 Social Hub")
@@ -13,7 +12,7 @@ def render_add_friend_page(username: str = ""):
         "Add by Code"
     ])
 
-    # --- 1. 好友列表 ---
+    # --- 1. 好友列表 (增加了删除功能) ---
     with list_tab:
         try:
             res = api_get("/social/friends")
@@ -23,11 +22,13 @@ def render_add_friend_page(username: str = ""):
             else:
                 for f in friends:
                     with st.container():
-                        col1, col2 = st.columns([3, 1])
+                        # 把列分成了 3 份：名字占大部分，聊天和删除按钮各占一小部分
+                        col1, col2, col3 = st.columns([3, 1, 1])
                         with col1:
                             st.markdown(f"**{f['username']}** (ID: `{f['user_code']}`)")
+                        
                         with col2:
-                            if st.button("💬 Chat", key=f"chat_{f['id']}"):
+                            if st.button("💬 Chat", key=f"chat_{f['id']}", use_container_width=True):
                                 try:
                                     dm_res = api_post("/social/friends/dm", {"friend_id": f['id']})
                                     st.session_state.active_group = dm_res.get("group_id")
@@ -35,7 +36,17 @@ def render_add_friend_page(username: str = ""):
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Chat failed: {e}")
-                        st.divider()
+                        
+                        with col3:
+                            # 🔴 新增的删除好友按钮
+                            if st.button("❌ Remove", key=f"del_{f['id']}", type="secondary", use_container_width=True):
+                                try:
+                                    api_post("/social/friends/remove", {"friend_id": f['id']})
+                                    st.toast(f"Removed {f['username']} from your friends list. 🗑️")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to remove friend: {e}")
+                    st.divider()
         except Exception as e:
             st.error(f"Friends list error: {e}")
 
@@ -59,19 +70,18 @@ def render_add_friend_page(username: str = ""):
 
     # --- 3. 添加好友 ---
     with add_tab:
-        st.subheader("Search by UserID")
-        st.caption("Enter the numeric UserID of your friend.")
+        st.subheader("Search by UserID or Username")
+        st.caption("Enter the numeric UserID or exact username of your friend.")
         
-        friend_code = st.text_input("Enter UserID", placeholder="e.g. 1001")
+        friend_code = st.text_input("Enter UserID / Username", placeholder="e.g. 1001 or Alice")
         
         if st.button("Send Request", type="primary"):
-            if not friend_code:
-                st.warning("Please enter a UserID.")
+            if not friend_code.strip():
+                st.warning("Please enter a UserID or Username.")
             else:
                 try:
-                    res = api_post("/social/friends/add", {"friend_code": friend_code})
+                    res = api_post("/social/friends/add", {"friend_code": friend_code.strip()})
                     if res.get("message") == "Exists":
-                        # 🔴 优化提示：明确告诉用户是对方还没同意
                         st.info("⏳ Request is pending. Waiting for them to accept.")
                     else:
                         st.success(f"✅ Request sent to {res.get('username', 'user')}! They need to accept it.")
@@ -79,7 +89,7 @@ def render_add_friend_page(username: str = ""):
                 except Exception as e:
                     err_msg = str(e).lower()
                     if "404" in err_msg or "not found" in err_msg:
-                        st.error(f"❌ User ID '{friend_code}' does not exist.")
+                        st.error(f"❌ User '{friend_code.strip()}' does not exist.")
                     elif "cannot add self" in err_msg:
                         st.error("🚫 You cannot add yourself.")
                     else:
