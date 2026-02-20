@@ -3,25 +3,27 @@ from datetime import datetime
 from html import escape
 from textwrap import dedent
 from typing import Dict, Any
-
 import streamlit as st
 
-# --- 你原来的样式逻辑 ---
+def card_container():
+    """卡片样式容器"""
+    return st.container(border=True)
+
 def render_message_bubble(msg: Dict[str, Any]) -> None:
+    """还原精美 HTML/CSS 气泡逻辑"""
     sender = msg.get("sender") or "User"
     content = msg.get("content", "")
-    ts = msg.get("created_at") or msg.get("timestamp") # 兼容后端返回的字段名
-    is_me = sender == st.session_state.get("current_user")
+    ts = msg.get("created_at") or msg.get("timestamp")
+    is_me = sender == st.session_state.get("user")
 
     align = "flex-end" if is_me else "flex-start"
     bubble_color = "#e8f4ec" if is_me else "#ffffff"
     border = "1px solid rgba(31,122,80,0.35)" if is_me else "1px solid rgba(31,122,80,0.12)"
-    text_color = "#123124" if is_me else "#123124"
+    text_color = "#123124"
 
     time_str = ""
     if ts:
         try:
-            # 兼容字符串或 datetime 对象
             if isinstance(ts, str):
                 time_str = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M")
             else:
@@ -53,14 +55,3 @@ def render_message_bubble(msg: Dict[str, Any]) -> None:
         """
     ).strip()
     st.markdown(html, unsafe_allow_html=True)
-
-# --- 新增的组件，用于修复好友页面的 ImportError ---
-def card_container():
-    """
-    为好友请求、群组卡片等提供统一的带边框容器
-    """
-    return st.container(border=True)
-
-def info_label(label: str, value: str):
-    """显示标签和值的组合"""
-    st.markdown(f"**{label}:** {value}")
