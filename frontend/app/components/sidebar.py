@@ -27,7 +27,6 @@ def render_social_sidebar(username: str):
 
     st.sidebar.markdown("---")
 
-    # 1. 获取数据
     try: raw_groups = fetch_groups()
     except: raw_groups = []
     all_groups = raw_groups if isinstance(raw_groups, list) else []
@@ -46,7 +45,6 @@ def render_social_sidebar(username: str):
     if pending_count > 0:
         st.sidebar.warning(f"🔔 {pending_count} New Friend Request(s)")
 
-    # 2. 群组列表
     display_groups = []
     for g in all_groups:
         if isinstance(g, dict) and not (g.get("name") or "").upper().startswith("DM:"):
@@ -73,7 +71,6 @@ def render_social_sidebar(username: str):
 
     st.sidebar.markdown("---")
 
-    # 3. 好友列表
     st.sidebar.markdown("### 👥 Friends")
     if not friends:
         st.sidebar.caption("No friends found.")
@@ -96,7 +93,6 @@ def render_social_sidebar(username: str):
 
     st.sidebar.markdown("---")
     
-    # 4. 操作面板 (创建群组与加好友)
     with st.sidebar.expander("➕ Create New Group"):
         new_name = st.text_input("Name", key="sidebar_new_grp_name")
         friend_opts = {f"{f['username']}": f['user_code'] for f in friends if isinstance(f, dict)}
@@ -125,7 +121,8 @@ def render_social_sidebar(username: str):
                 try:
                     res = send_friend_request(target_id)
                     if isinstance(res, dict) and res.get("message") == "Exists":
-                        st.sidebar.info("Already requested or friends.")
+                        # 🔴 优化提示
+                        st.sidebar.info("⏳ Pending. Waiting for them to accept.")
                     else:
                         st.sidebar.toast("Request Sent! 🚀")
                 except Exception as e:
