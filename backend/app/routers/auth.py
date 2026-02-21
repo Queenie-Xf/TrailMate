@@ -9,7 +9,7 @@ from app.models.sql_models import (
     AuthResponse,
     AuthUser,
 )
-# ✅ 修正：从新的 database.py 导入 helper
+# ✅ 修正：从数据库核心模块导入
 from app.core.database import fetch_one, fetch_one_returning
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
+# 你原本的正则校验逻辑
 USER_CODE_REGEX = re.compile(r"^[A-Za-z0-9]{4,16}$")
 
 def _validate_user_code(user_code: str) -> None:
@@ -37,14 +38,17 @@ def signup(payload: SignupRequest) -> AuthResponse:
 
     _validate_user_code(user_code)
 
-    existing_user = fetch_one("SELECT id FROM users WHERE username = %(u)s", {"u": username})
+    # 1. 检查 Username 是否存在
+    existing_user = fetch_one("SELECT id FROM users WHERE LOWER(username) = LOWER(%(u)s)", {"u": username})
     if existing_user:
         raise HTTPException(400, "Username 已经存在")
 
-    existing_code = fetch_one("SELECT id FROM users WHERE user_code = %(c)s", {"c": user_code})
+    # 2. 🔴 核心新增：检查 user_code 是否已被占用 (解决 2001 重复问题)
+    existing_code = fetch_one("SELECT id FROM users WHERE LOWER(user_code) = LOWER(%(c)s)", {"c": user_code})
     if existing_code:
-        raise HTTPException(400, "这个 user_code 已被使用，请换一个")
+        raise HTTPException(400, f"这个 user_code ({user_code}) 已被使用，请换一个")
 
+    # 3. 插入数据
     row = fetch_one_returning(
         """
         INSERT INTO users (username, user_code, password_hash)
