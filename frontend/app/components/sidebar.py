@@ -4,7 +4,7 @@ from streamlit_autorefresh import st_autorefresh
 
 from app.core.api import (
     fetch_groups, fetch_friends, fetch_friend_requests, 
-    get_or_create_dm, create_group, accept_friend_request, send_friend_request
+    get_or_create_dm
 )
 
 # ==========================================
@@ -89,51 +89,6 @@ def _render_friend_list(friends: list):
                     st.sidebar.error(f"DM Error: {e}")
 
 
-def _render_action_panels(friends: list, pending_reqs: list):
-    """渲染底部：创建新群组、添加好友的折叠面板 (Expander)"""
-    # 1. 创建群组
-    with st.sidebar.expander("➕ Create New Group"):
-        new_name = st.text_input("Name", key="sidebar_new_grp_name")
-        friend_opts = {f"{f['username']}": f['user_code'] for f in friends if isinstance(f, dict)}
-        selected = st.multiselect("Invite", options=list(friend_opts.keys()))
-        if st.button("Initialize Group", use_container_width=True):
-            if new_name:
-                res = create_group(new_name, [friend_opts[s] for s in selected])
-                st.session_state.active_group = res.get("group_id")
-                st.rerun()
-
-    # 2. 添加/管理好友
-    pending_count = len(pending_reqs)
-    add_btn_label = f"👋 Add Friend ({pending_count})" if pending_count > 0 else "👋 Add Friend"
-    
-    with st.sidebar.expander(add_btn_label):
-        # 待处理的请求
-        if pending_reqs:
-            for r in pending_reqs:
-                st.write(f"**{r.get('from_username')}**")
-                if st.button("Accept", key=f"sidebar_acc_{r.get('id')}"):
-                    accept_friend_request(r.get('id'))
-                    st.rerun()
-            st.divider()
-        
-        # 主动发送请求
-        target_id = st.text_input("Enter Hike ID")
-        if st.button("Send Request", use_container_width=True):
-            if not target_id:
-                st.sidebar.warning("Please enter an ID.")
-            else:
-                try:
-                    res = send_friend_request(target_id)
-                    if isinstance(res, dict) and res.get("message") == "Exists":
-                        st.sidebar.info("⏳ Pending. Waiting for them to accept.")
-                    else:
-                        st.toast("Request Sent! 🚀")
-                except Exception as e:
-                    err_msg = str(e).lower()
-                    if "404" in err_msg or "not found" in err_msg:
-                        st.sidebar.error(f"❌ User ID '{target_id}' does not exist.")
-                    else:
-                        st.sidebar.error(f"Failed: {e}")
 
 
 # ==========================================
@@ -176,4 +131,6 @@ def render_social_sidebar(username: str):
     _render_friend_list(friends)
     st.sidebar.markdown("---")
 
-    _render_action_panels(friends, pending_reqs)
+ 
+    
+    
