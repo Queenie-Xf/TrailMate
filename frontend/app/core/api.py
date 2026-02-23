@@ -120,3 +120,7 @@ def api_post(endpoint: str, json_data: dict = None):
         except: detail = f"Status {r.status_code}"
         raise RuntimeError(detail)
     return r.json()
+
+def reject_friend_request(request_id: str) -> dict:
+    """前端调用后端的拒绝好友请求接口"""
+    return auth_request(f"/social/friends/requests/{request_id}/reject", method="POST")

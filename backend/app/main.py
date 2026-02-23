@@ -14,11 +14,13 @@ from app.core.database import SessionLocal, fetch_one, fetch_one_returning, engi
 from app.models.sql_models import AuthUser
 from app.services.planner import AutoPlannerService
 from app.core.init_db import init_tables
+from app.routers import auth, routes, social
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
 
 app = FastAPI(title="HikeBot Backend")
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -35,7 +37,6 @@ if static_dir.exists():
 app.include_router(auth.router)
 app.include_router(social.router)
 app.include_router(routes.router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

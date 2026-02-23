@@ -135,3 +135,23 @@ class InviteRequest(BaseModel):
 
 class KickRequest(BaseModel):
     user_id: int
+    
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy.sql import func
+
+
+from sqlalchemy.sql import func  # 只需要补上 func 即可，其他类型顶部已经导入过了
+
+# ==========================================
+# 新增：群组邀请表
+# ==========================================
+class GroupInvitation(Base):
+    __tablename__ = "group_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # 🔴 关键修复：把 Integer 改回 String，和你的系统保持一致
+    group_id = Column(String, nullable=False, index=True)  
+    inviter_id = Column(Integer, nullable=False)  # 邀请人 ID
+    invitee_id = Column(Integer, nullable=False)  # 被邀请人 ID
+    status = Column(String, default="pending")    # pending, accepted, rejected
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

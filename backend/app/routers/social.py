@@ -10,7 +10,7 @@ from app.models.sql_models import (
     DMRequest, InviteRequest, KickRequest, RemoveFriendRequest
 )
 from app.services.planner import AutoPlannerService
-
+from app.core.database import get_db
 router = APIRouter(prefix="/social", tags=["social"])
 
 async def run_ai_task_in_background(group_id: str, content: str):
@@ -80,6 +80,18 @@ def accept_friend(p: FriendAcceptRequest, u: AuthUser = Depends(get_current_user
     
     return {"message": "Accepted"}
 
+# -----------------------------------------
+# 新增：拒绝好友请求
+# -----------------------------------------
+@router.post("/friends/requests/{request_id}/reject", response_model=Dict[str, Any])
+def reject_friend_request(request_id: int, u: AuthUser = Depends(get_current_user)):
+    # 直接用原生 execute 封装更新状态
+    execute(
+        "UPDATE friend_requests SET status='rejected' WHERE id=%(rid)s AND to_user_id=%(uid)s", 
+        {"rid": request_id, "uid": u.id}
+    )
+    return {"message": "Friend request rejected."}
+
 @router.post("/friends/remove", response_model=Dict[str, Any])
 def remove_friend(p: RemoveFriendRequest, u: AuthUser = Depends(get_current_user)):
     execute("DELETE FROM friendships WHERE (user_id=%(u)s AND friend_id=%(f)s) OR (user_id=%(f)s AND friend_id=%(u)s)", {"u": u.id, "f": p.friend_id})
@@ -106,15 +118,23 @@ def list_groups(u: AuthUser = Depends(get_current_user)):
 
 @router.post("/groups", response_model=Dict[str, Any])
 def create_group(p: GroupCreateRequest, u: AuthUser = Depends(get_current_user)):
+    # 1. 创建群组
     gid = fetch_one_returning("INSERT INTO groups (name, description, created_by) VALUES (%(n)s, %(d)s, %(u)s) RETURNING id", {"n": p.name, "d": p.description, "u": u.id})["id"]
+    
+    # 2. 把创建者自己加进去
     execute("INSERT INTO group_members (group_id, user_id, role) VALUES (%(gid)s, %(u)s, 'admin')", {"gid": gid, "u": u.id})
+    
+    # 3. 给其他人发送邀请 (不再是直接拉入群)
     if p.member_codes:
         codes = list(set(p.member_codes))
         plc = ",".join(["%s"]*len(codes))
         users = fetch_all(f"SELECT id FROM users WHERE user_code IN ({plc})", codes)
         for user in users:
             if user["id"] != u.id:
-                execute("INSERT INTO group_members (group_id, user_id, role) VALUES (%(gid)s, %(u)s, 'member') ON CONFLICT DO NOTHING", {"gid": gid, "u": user["id"]})
+                execute(
+                    "INSERT INTO group_invitations (group_id, inviter_id, invitee_id, status) VALUES (%(gid)s, %(me)s, %(invitee)s, 'pending')", 
+                    {"gid": str(gid), "me": u.id, "invitee": user["id"]}
+                )
     return {"message": "Created", "group_id": gid}
 
 @router.get("/groups/{group_id}/members", response_model=Dict[str, List[GroupMemberInfo]])
@@ -158,3 +178,39 @@ def send_msg(group_id: UUID, p: MessageCreateRequest, background_tasks: Backgrou
     )
     background_tasks.add_task(run_ai_task_in_background, group_id=str(group_id), content=p.content)
     return GroupMessageModel(**r)
+
+# -----------------------------------------
+# 新增：群组邀请相关接口
+# -----------------------------------------
+@router.get("/groups/invitations", response_model=Dict[str, Any])
+def get_invitations(u: AuthUser = Depends(get_current_user)):
+    # 联合查询获取群组名称和邀请人名称
+    rows = fetch_all("""
+        SELECT inv.id, inv.group_id, g.name AS group_name, u_inv.username AS invited_by_username
+        FROM group_invitations inv
+        JOIN groups g ON inv.group_id::varchar = g.id::varchar
+        JOIN users u_inv ON inv.inviter_id = u_inv.id
+        WHERE inv.invitee_id = %(uid)s AND inv.status = 'pending'
+    """, {"uid": u.id})
+    
+    return {"invitations": [dict(r) for r in rows]}
+
+@router.post("/groups/invitations/{invite_id}/accept", response_model=Dict[str, Any])
+def accept_invite(invite_id: int, u: AuthUser = Depends(get_current_user)):
+    # 1. 验证邀请是否存在
+    inv = fetch_one("SELECT group_id FROM group_invitations WHERE id=%(id)s AND invitee_id=%(uid)s AND status='pending'", {"id": invite_id, "uid": u.id})
+    if not inv: 
+        raise HTTPException(404, "Invite not found or already processed")
+        
+    # 2. 更新状态
+    execute("UPDATE group_invitations SET status='accepted' WHERE id=%(id)s", {"id": invite_id})
+    
+    # 3. 真正拉人进群
+    execute("INSERT INTO group_members (group_id, user_id, role) VALUES (%(gid)s, %(uid)s, 'member') ON CONFLICT DO NOTHING", {"gid": str(inv["group_id"]), "uid": u.id})
+    
+    return {"message": "Joined"}
+
+@router.post("/groups/invitations/{invite_id}/reject", response_model=Dict[str, Any])
+def reject_invite(invite_id: int, u: AuthUser = Depends(get_current_user)):
+    execute("UPDATE group_invitations SET status='rejected' WHERE id=%(id)s AND invitee_id=%(uid)s", {"id": invite_id, "uid": u.id})
+    return {"message": "Rejected"}

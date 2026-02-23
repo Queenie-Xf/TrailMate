@@ -1,5 +1,6 @@
 import streamlit as st
-from app.core.api import api_get, api_post
+# 🔴 修复 1：去掉了末尾多余的逗号
+from app.core.api import api_get, api_post, reject_friend_request
 from app.components.common import card_container
 
 def render_add_friend_page(username: str = ""):
@@ -22,7 +23,6 @@ def render_add_friend_page(username: str = ""):
             else:
                 for f in friends:
                     with st.container():
-                        # 把列分成了 3 份：名字占大部分，聊天和删除按钮各占一小部分
                         col1, col2, col3 = st.columns([3, 1, 1])
                         with col1:
                             st.markdown(f"**{f['username']}** (ID: `{f['user_code']}`)")
@@ -38,7 +38,6 @@ def render_add_friend_page(username: str = ""):
                                     st.error(f"Chat failed: {e}")
                         
                         with col3:
-                            # 🔴 新增的删除好友按钮
                             if st.button("❌ Remove", key=f"del_{f['id']}", type="secondary", use_container_width=True):
                                 try:
                                     api_post("/social/friends/remove", {"friend_id": f['id']})
@@ -50,7 +49,7 @@ def render_add_friend_page(username: str = ""):
         except Exception as e:
             st.error(f"Friends list error: {e}")
 
-    # --- 2. 好友请求 ---
+    # --- 2. 好友请求 (🔴 修复 2：加上了拒绝按钮排版) ---
     with requests_tab:
         try:
             req_res = api_get("/social/friends/requests")
@@ -61,10 +60,22 @@ def render_add_friend_page(username: str = ""):
                 for r in requests:
                     with card_container():
                         st.write(f"**{r['from_username']}** sent you a request.")
-                        if st.button("✅ Accept", key=f"acc_{r['id']}"):
-                            api_post("/social/friends/accept", {"request_id": r['id']})
-                            st.success("Accepted!")
-                            st.rerun()
+                        
+                        # 把下方分成两列，放两个按钮
+                        col_acc, col_rej = st.columns(2)
+                        
+                        with col_acc:
+                            if st.button("✅ Accept", key=f"acc_{r['id']}", use_container_width=True):
+                                api_post("/social/friends/accept", {"request_id": r['id']})
+                                st.success("Accepted!")
+                                st.rerun()
+                                
+                        with col_rej:
+                            if st.button("❌ Reject", key=f"rej_{r['id']}", type="secondary", use_container_width=True):
+                                # 调用你刚刚写好的后端拒绝接口
+                                api_post(f"/social/friends/requests/{r['id']}/reject", {})
+                                st.warning("Request declined.")
+                                st.rerun()
         except Exception as e:
             st.error(f"Requests error: {e}")
 
