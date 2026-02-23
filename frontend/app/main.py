@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 
 # ⚠️ 必须是第一个 Streamlit 命令
 st.set_page_config(page_title="HikeBot | Summit Together", page_icon="🏔️", layout="wide")
@@ -12,7 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 2. 导入所有功能视图
 from app.core.state import init_state
-from app.core.api import auth_request
+from app.core.api import auth_request, api_get
 from app.views.home import render_home_page
 from app.views.friends import render_add_friend_page
 from app.views.groups import render_groups_page 
@@ -20,7 +21,7 @@ from app.views.chat import render_chat_page
 
 import extra_streamlit_components as stx
 
-# 初始化 Cookie 管理器 (使用全新 Key 强制隔离旧缓存)
+# 初始化 Cookie 管理器
 cookie_manager = stx.CookieManager(key="hikebot_v2_final_lock")
 
 # 3. 注入高级主题 CSS
@@ -80,7 +81,6 @@ def render_auth_gate():
             c = st.text_input("User Code (e.g. 2001)")
             if st.form_submit_button("Join the Community", use_container_width=True):
                 try:
-                    # 仅发送注册请求，不触发自动登录
                     auth_request("/auth/signup", u, p, c)
                     st.success("Account created! Please switch to Login tab to sign in.")
                     st.balloons()
@@ -94,7 +94,6 @@ def main() -> None:
 
     cookies = cookie_manager.get_all()
 
-    # 从 Cookie 恢复状态 (带严格的非空拦截)
     if not st.session_state.get("authenticated"):
         saved_user = cookies.get("saved_username")
         saved_code = cookies.get("saved_usercode")
@@ -108,9 +107,35 @@ def main() -> None:
         render_auth_gate()
         return
 
-    # --- 侧边栏导航 (极简版) ---
+    # --- 侧边栏导航 (极简版 + 通知门铃 + 手动刷新) ---
     with st.sidebar:
-        st.markdown(f"### 🌲 Welcome, {user}")
+        # 🔴 完美排版：把欢迎语和手动刷新按钮并排放在一起
+        col_title, col_btn = st.columns([4, 1])
+        with col_title:
+            st.markdown(f"### 🌲 Welcome, {user}")
+        with col_btn:
+            if st.button("🔄", help="Force Refresh Data", key="btn_manual_refresh", use_container_width=True):
+                st.rerun()
+                
+        # 显示最后同步时间，让你对 10秒自动刷新 有直观的感知
+        st.caption(f"Last sync: {datetime.now().strftime('%H:%M:%S')}")
+        
+        # 每 10 秒静默拉取一次数据
+        st_autorefresh(interval=10000, key="sidebar_auto_sync")
+        
+        # 获取通知并渲染红色高亮提醒
+        try:
+            req_res = api_get("/social/friends/requests")
+            pending_reqs = req_res.get("requests", [])
+            if pending_reqs:
+                st.error(f"🔔 You have {len(pending_reqs)} new friend request(s)!")
+                if st.button("👉 View Requests", use_container_width=True):
+                    st.session_state.sidebar_nav_radio = "Social Bar" 
+                    st.session_state.view_mode = "friends"
+                    st.rerun()
+        except Exception:
+            pass 
+            
         st.subheader("Explore")
         
         def on_nav_change():
@@ -122,7 +147,6 @@ def main() -> None:
             elif choice == "Hiking Groups":
                 st.session_state.view_mode = "groups"
 
-        # 状态同步
         current_view = st.session_state.get("view_mode", "home")
         if current_view == "home":
             st.session_state.sidebar_nav_radio = "Home / Search"
@@ -143,7 +167,6 @@ def main() -> None:
 
         st.divider()
         
-        # 终极登出逻辑
         if st.button("🚪 Logout", use_container_width=True, type="secondary"):
             cookie_manager.set("saved_username", "", max_age=0, key="logout_clear_u")
             cookie_manager.set("saved_usercode", "", max_age=0, key="logout_clear_c")

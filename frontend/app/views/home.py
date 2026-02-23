@@ -1,7 +1,7 @@
 import streamlit as st
 
 # 导入所有拆分出来的视图组件
-from app.components.sidebar import render_social_sidebar
+
 from app.components.dashboard import render_dashboard
 from app.views.ai_chat import render_ai_interface
 from app.views.group_chat import render_group_interface
@@ -14,8 +14,6 @@ def render_home_page(username: str) -> None:
     只负责判断当前状态，并调用对应的视图组件。
     """
     
-    # 1. 始终渲染侧边栏
-    render_social_sidebar(username)
     
     # 2. 判断子视图模式
     view_mode = st.session_state.get("view_mode", "home")
